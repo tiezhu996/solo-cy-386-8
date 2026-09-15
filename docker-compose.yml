@@ -1,0 +1,89 @@
+name: marketpal
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: ${COMPOSE_PROJECT_NAME:-marketpal}-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-marketpal_db}
+      POSTGRES_USER: ${DB_USER:-marketpal_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-marketpal_pwd}
+      TZ: Asia/Shanghai
+    ports:
+      - "${DB_PORT:-44014}:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-marketpal_user} -d ${DB_NAME:-marketpal_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  redis:
+    image: redis:7-alpine
+    container_name: ${COMPOSE_PROJECT_NAME:-marketpal}-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-46314}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  backend:
+    build:
+      context: ./backend
+    container_name: ${COMPOSE_PROJECT_NAME:-marketpal}-backend
+    restart: unless-stopped
+    environment:
+      APP_ENV: production
+      SERVER_PORT: "8080"
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_USER: ${DB_USER:-marketpal_user}
+      DB_PASSWORD: ${DB_PASSWORD:-marketpal_pwd}
+      DB_NAME: ${DB_NAME:-marketpal_db}
+      DB_SSLMODE: disable
+      REDIS_ADDR: redis:6379
+      REDIS_PASSWORD: ""
+      JWT_SECRET: ${JWT_SECRET:-change_me_to_a_long_random_string}
+      JWT_EXPIRE_HOURS: "72"
+      UPLOAD_DIR: /app/uploads
+      PUBLIC_URL: http://localhost:${BACKEND_PORT:-19406}/uploads
+      TZ: Asia/Shanghai
+    ports:
+      - "${BACKEND_PORT:-19406}:8080"
+    volumes:
+      - upload_data:/app/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: ${COMPOSE_PROJECT_NAME:-marketpal}-frontend
+    restart: unless-stopped
+    environment:
+      BACKEND_PORT: ${BACKEND_PORT:-19406}
+    ports:
+      - "${FRONTEND_PORT:-18406}:80"
+    depends_on:
+      - backend
+
+volumes:
+  db_data:
+  redis_data:
+  upload_data:
