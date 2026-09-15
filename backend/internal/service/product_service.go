@@ -11,21 +11,24 @@ import (
 	"github.com/marketpal/marketpal/internal/model"
 	"github.com/marketpal/marketpal/internal/repository"
 	"github.com/marketpal/marketpal/internal/util"
+	"gorm.io/gorm"
 )
 
 // ProductService 商品业务服务（同时承载收藏逻辑，收藏复用商品仓储的计数方法）。
 type ProductService struct {
+	db           *gorm.DB
 	productRepo  repository.ProductRepository
 	favoriteRepo repository.FavoriteRepository
+	reviewRepo   repository.ProductReviewRepository
 	logger       *slog.Logger
 }
 
 // NewProductService 构造商品服务。
-func NewProductService(productRepo repository.ProductRepository, favoriteRepo repository.FavoriteRepository, logger *slog.Logger) *ProductService {
-	return &ProductService{productRepo: productRepo, favoriteRepo: favoriteRepo, logger: logger}
+func NewProductService(db *gorm.DB, productRepo repository.ProductRepository, favoriteRepo repository.FavoriteRepository, reviewRepo repository.ProductReviewRepository, logger *slog.Logger) *ProductService {
+	return &ProductService{db: db, productRepo: productRepo, favoriteRepo: favoriteRepo, reviewRepo: reviewRepo, logger: logger}
 }
 
-// Create 发布商品。
+// Create 发布商品：新商品一律进入待审核并下架，同时生成第 1 轮审核记录，审核通过前大厅/搜索不可见、不可加购下单。
 func (s *ProductService) Create(sellerID uint, req dto.ProductCreateRequest) (*model.Product, error) {
 	if !constants.ValidProductCondition(req.Condition) {
 		return nil, util.NewAppError(constants.CodeBadRequest, "商品发布失败：成色 "+req.Condition+" 非法", nil)
@@ -42,62 +45,119 @@ func (s *ProductService) Create(sellerID uint, req dto.ProductCreateRequest) (*m
 		Condition:     req.Condition,
 		Category:      req.Category,
 		Images:        strings.Join(req.Images, ","),
-		Status:        constants.ProductStatusOnSale,
+		Status:        constants.ProductStatusOffShelf,
+		ReviewStatus:  constants.ProductReviewPending,
+		ReviewRound:   1,
 	}
-	if err := s.productRepo.Create(product); err != nil {
-		return nil, fmt.Errorf("create product seller=%d: %w", sellerID, err)
+	var reviewID uint
+	if err := s.runTx(func(tx *gorm.DB) error {
+		if err := s.productRepo.CreateTx(tx, product); err != nil {
+			return fmt.Errorf("create product seller=%d: %w", sellerID, err)
+		}
+		review := &model.ProductReview{
+			ProductID: product.ID,
+			SellerID:  sellerID,
+			Round:     1,
+			Status:    constants.ProductReviewPending,
+		}
+		if err := s.reviewRepo.CreateTx(tx, review); err != nil {
+			return fmt.Errorf("create pending review for product %d: %w", product.ID, err)
+		}
+		reviewID = review.ID
+		return nil
+	}); err != nil {
+		return nil, err
 	}
-	s.logger.Info(constants.LogProductCreated, "product_id", product.ID, "seller_id", sellerID, "category", product.Category, "condition", product.Condition)
+	s.logger.Info(constants.LogProductCreated, "product_id", product.ID, "seller_id", sellerID, "category", product.Category, "condition", product.Condition, "review_status", product.ReviewStatus)
+	s.logger.Info(constants.LogProductReviewSubmit, "product_id", product.ID, "seller_id", sellerID, "review_id", reviewID, "round", 1, "trigger", "create")
 	return product, nil
 }
 
 // Update 卖家更新商品。
+// 审核通过（approved）的商品修改后立即下架并进入复审；驳回（rejected）商品修改即重新提交；
+// 待审核（pending_review）期间重复提交直接拒绝，不重复改状态（幂等）。
 func (s *ProductService) Update(userID, productID uint, req dto.ProductUpdateRequest) (*model.Product, error) {
-	product, err := s.productRepo.GetByID(productID)
+	var product *model.Product
+	var reviewID uint
+	err := s.runTx(func(tx *gorm.DB) error {
+		p, err := s.productRepo.GetByIDForUpdate(tx, productID)
+		if err != nil {
+			if errors.Is(err, repository.ErrNotFound) {
+				return util.NewAppError(constants.CodeProductNotFound, "商品更新失败：商品 id="+fmt.Sprint(productID)+" 不存在", err)
+			}
+			return fmt.Errorf("lock product %d for update: %w", productID, err)
+		}
+		if p.SellerID != userID {
+			return util.NewAppError(constants.CodeForbidden, "商品更新失败：只有卖家（用户 id="+fmt.Sprint(userID)+"）可修改商品", nil)
+		}
+		switch p.ReviewStatus {
+		case constants.ProductReviewPending:
+			// 待审核中重复提交/重复修改不能重复改状态。
+			s.logger.Warn(constants.LogProductReviewDuplicate, "product_id", productID, "seller_id", userID, "review_status", p.ReviewStatus)
+			return util.NewAppError(constants.CodeReviewDuplicate, "商品更新失败：商品 id="+fmt.Sprint(productID)+" 正在平台审核中，请等待审核结果后再修改", nil)
+		case constants.ProductReviewApproved, constants.ProductReviewRejected:
+			// 允许修改并重新送审。
+		default:
+			return util.NewAppError(constants.CodeReviewStateInvalid, "商品更新失败：商品 id="+fmt.Sprint(productID)+" 审核状态 "+p.ReviewStatus+" 不可修改", nil)
+		}
+		if req.Title != nil {
+			p.Title = *req.Title
+		}
+		if req.Description != nil {
+			p.Description = *req.Description
+		}
+		if req.OriginalPrice != nil {
+			p.OriginalPrice = *req.OriginalPrice
+		}
+		if req.Price != nil {
+			p.Price = *req.Price
+		}
+		if req.Condition != nil {
+			if !constants.ValidProductCondition(*req.Condition) {
+				return util.NewAppError(constants.CodeBadRequest, "商品更新失败：成色 "+*req.Condition+" 非法", nil)
+			}
+			p.Condition = *req.Condition
+		}
+		if req.Category != nil {
+			if !constants.ValidProductCategory(*req.Category) {
+				return util.NewAppError(constants.CodeBadRequest, "商品更新失败：分类 "+*req.Category+" 非法", nil)
+			}
+			p.Category = *req.Category
+		}
+		if req.Images != nil {
+			p.Images = strings.Join(req.Images, ",")
+		}
+		// 修改已上架/被驳回商品 → 新一轮待审核，复审期间继续下架。
+		newRound := p.ReviewRound + 1
+		p.ReviewRound = newRound
+		p.ReviewStatus = constants.ProductReviewPending
+		p.RejectReason = ""
+		p.Status = constants.ProductStatusOffShelf
+		if err := s.productRepo.UpdateTx(tx, p); err != nil {
+			return fmt.Errorf("update product %d: %w", productID, err)
+		}
+		review := &model.ProductReview{
+			ProductID: p.ID,
+			SellerID:  p.SellerID,
+			Round:     newRound,
+			Status:    constants.ProductReviewPending,
+		}
+		if err := s.reviewRepo.CreateTx(tx, review); err != nil {
+			return fmt.Errorf("resubmit review for product %d: %w", productID, err)
+		}
+		reviewID = review.ID
+		product = p
+		return nil
+	})
 	if err != nil {
-		if errors.Is(err, repository.ErrNotFound) {
-			return nil, util.NewAppError(constants.CodeProductNotFound, "商品更新失败：商品 id="+fmt.Sprint(productID)+" 不存在", err)
-		}
-		return nil, fmt.Errorf("get product %d for update: %w", productID, err)
+		return nil, err
 	}
-	if product.SellerID != userID {
-		return nil, util.NewAppError(constants.CodeForbidden, "商品更新失败：只有卖家（用户 id="+fmt.Sprint(userID)+"）可修改商品", nil)
-	}
-	if req.Title != nil {
-		product.Title = *req.Title
-	}
-	if req.Description != nil {
-		product.Description = *req.Description
-	}
-	if req.OriginalPrice != nil {
-		product.OriginalPrice = *req.OriginalPrice
-	}
-	if req.Price != nil {
-		product.Price = *req.Price
-	}
-	if req.Condition != nil {
-		if !constants.ValidProductCondition(*req.Condition) {
-			return nil, util.NewAppError(constants.CodeBadRequest, "商品更新失败：成色 "+*req.Condition+" 非法", nil)
-		}
-		product.Condition = *req.Condition
-	}
-	if req.Category != nil {
-		if !constants.ValidProductCategory(*req.Category) {
-			return nil, util.NewAppError(constants.CodeBadRequest, "商品更新失败：分类 "+*req.Category+" 非法", nil)
-		}
-		product.Category = *req.Category
-	}
-	if req.Images != nil {
-		product.Images = strings.Join(req.Images, ",")
-	}
-	if err := s.productRepo.Update(product); err != nil {
-		return nil, fmt.Errorf("update product %d: %w", productID, err)
-	}
-	s.logger.Info(constants.LogProductUpdated, "product_id", productID, "seller_id", userID, "status", product.Status)
+	s.logger.Info(constants.LogProductUpdated, "product_id", productID, "seller_id", userID, "status", product.Status, "review_status", product.ReviewStatus, "round", product.ReviewRound)
+	s.logger.Info(constants.LogProductReviewSubmit, "product_id", productID, "seller_id", userID, "review_id", reviewID, "round", product.ReviewRound, "trigger", "update")
 	return product, nil
 }
 
-// OffShelf 卖家下架商品。
+// OffShelf 卖家主动下架商品（不改变审核状态；待审商品本身已下架，重复下架不改变状态）。
 func (s *ProductService) OffShelf(userID, productID uint) (*model.Product, error) {
 	product, err := s.productRepo.GetByID(productID)
 	if err != nil {
@@ -109,6 +169,10 @@ func (s *ProductService) OffShelf(userID, productID uint) (*model.Product, error
 	if product.SellerID != userID {
 		return nil, util.NewAppError(constants.CodeForbidden, "商品下架失败：只有卖家（用户 id="+fmt.Sprint(userID)+"）可下架商品", nil)
 	}
+	if product.Status == constants.ProductStatusOffShelf {
+		// 幂等：重复下架不重复改状态。
+		return product, nil
+	}
 	product.Status = constants.ProductStatusOffShelf
 	if err := s.productRepo.Update(product); err != nil {
 		return nil, fmt.Errorf("off shelf product %d: %w", productID, err)
@@ -117,14 +181,22 @@ func (s *ProductService) OffShelf(userID, productID uint) (*model.Product, error
 	return product, nil
 }
 
-// GetDetail 商品详情（自增浏览量）。
-func (s *ProductService) GetDetail(productID uint) (*model.Product, error) {
+// GetDetail 商品详情（自增浏览量）。审核未通过商品仅卖家本人/管理员可看，其他访问者按不存在处理，
+// 使审核结果与大厅、搜索、详情同时生效。
+func (s *ProductService) GetDetail(productID, viewerID uint, viewerRole string) (*model.Product, error) {
 	product, err := s.productRepo.GetByID(productID)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			return nil, util.NewAppError(constants.CodeProductNotFound, "商品详情查询失败：商品 id="+fmt.Sprint(productID)+" 不存在", err)
 		}
 		return nil, fmt.Errorf("get product detail %d: %w", productID, err)
+	}
+	if product.ReviewStatus != constants.ProductReviewApproved {
+		isOwner := viewerID > 0 && viewerID == product.SellerID
+		isAdmin := viewerRole == constants.UserRoleAdmin
+		if !isOwner && !isAdmin {
+			return nil, util.NewAppError(constants.CodeProductNotFound, "商品详情查询失败：商品 id="+fmt.Sprint(productID)+" 尚未通过平台审核", nil)
+		}
 	}
 	if err := s.productRepo.IncrViewCount(productID); err != nil {
 		s.logger.Warn("incr view count failed", "product_id", productID, "err", err)
@@ -133,7 +205,7 @@ func (s *ProductService) GetDetail(productID uint) (*model.Product, error) {
 	return product, nil
 }
 
-// List 商品列表/搜索（关键词、分类、价格区间、成色、排序）。
+// List 商品大厅/搜索：仅返回审核通过且在售商品（审核结果与大厅、搜索同时生效）。
 func (s *ProductService) List(q dto.ProductQuery, viewerID uint) (*dto.ProductListResponse, error) {
 	page, pageSize := q.Page, q.PageSize
 	if page < 1 {
@@ -142,16 +214,18 @@ func (s *ProductService) List(q dto.ProductQuery, viewerID uint) (*dto.ProductLi
 	if pageSize < 1 {
 		pageSize = 10
 	}
-	query := map[string]interface{}{
-		"keyword":    q.Keyword,
-		"category":   q.Category,
-		"condition":  q.Condition,
-		"min_price":  q.MinPrice,
-		"max_price":  q.MaxPrice,
-		"status":     q.Status,
+	status := q.Status
+	if status == "" {
+		status = constants.ProductStatusOnSale
 	}
-	if q.Status == "" {
-		query["status"] = constants.ProductStatusOnSale
+	query := map[string]interface{}{
+		"keyword":       q.Keyword,
+		"category":      q.Category,
+		"condition":     q.Condition,
+		"min_price":     q.MinPrice,
+		"max_price":     q.MaxPrice,
+		"status":        status,
+		"review_status": constants.ProductReviewApproved,
 	}
 	products, total, err := s.productRepo.List(query, q.SortBy, page, pageSize)
 	if err != nil {
@@ -168,7 +242,7 @@ func (s *ProductService) List(q dto.ProductQuery, viewerID uint) (*dto.ProductLi
 	return &dto.ProductListResponse{List: list, Total: total, Page: page, Size: pageSize}, nil
 }
 
-// ListBySeller 我的发布（卖家视角）。
+// ListBySeller 我的发布（卖家视角，含待审/驳回商品与审核字段）。
 func (s *ProductService) ListBySeller(sellerID uint, page, pageSize int) (*dto.ProductListResponse, error) {
 	p := util.NormalizePage(page, pageSize)
 	products, total, err := s.productRepo.ListBySeller(sellerID, p.Page, p.PageSize)
@@ -199,13 +273,17 @@ func (s *ProductService) ListFavorites(userID uint, page, pageSize int) (*dto.Pr
 	return &dto.ProductListResponse{List: list, Total: total, Page: p.Page, Size: p.PageSize}, nil
 }
 
-// Favorite 收藏商品。
+// Favorite 收藏商品（仅审核通过商品可被收藏；已有收藏不受审核影响）。
 func (s *ProductService) Favorite(userID, productID uint) error {
-	if _, err := s.productRepo.GetByID(productID); err != nil {
+	product, err := s.productRepo.GetByID(productID)
+	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			return util.NewAppError(constants.CodeProductNotFound, "收藏失败：商品 id="+fmt.Sprint(productID)+" 不存在", err)
 		}
 		return fmt.Errorf("get product %d for favorite: %w", productID, err)
+	}
+	if product.ReviewStatus != constants.ProductReviewApproved {
+		return util.NewAppError(constants.CodeProductReviewing, "收藏失败：商品 id="+fmt.Sprint(productID)+" 尚未通过平台审核，暂不可收藏", nil)
 	}
 	exists, err := s.favoriteRepo.Exists(userID, productID)
 	if err != nil {
@@ -238,7 +316,16 @@ func (s *ProductService) Unfavorite(userID, productID uint) error {
 	s.logger.Info(constants.LogFavoriteRemoved, "user_id", userID, "product_id", productID)
 	return nil
 }
+
 // toProductVO model → 视图对象（dto 集中转换，商品/订单/购物车模块复用）。
 func toProductVO(p *model.Product, isFavorite bool) dto.ProductVO {
 	return dto.FromProduct(p, isFavorite)
+}
+
+// runTx 运行数据库事务；db 为空（单元测试内存仓储装配）时以 nil tx 直接执行。
+func (s *ProductService) runTx(fn func(tx *gorm.DB) error) error {
+	if s.db == nil {
+		return fn(nil)
+	}
+	return s.db.Transaction(fn)
 }

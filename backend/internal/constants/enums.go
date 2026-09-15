@@ -3,7 +3,7 @@ package constants
 
 // OrderStatus 订单状态枚举（前端 constants/order.ts 同步维护）。
 const (
-	OrderStatusPendingPayment string = "pending_payment" // 待付款
+	OrderStatusPendingPayment  string = "pending_payment"  // 待付款
 	OrderStatusPendingShipment string = "pending_shipment" // 待发货
 	OrderStatusShipped         string = "shipped"          // 已发货
 	OrderStatusReceived        string = "received"         // 已收货
@@ -13,9 +13,9 @@ const (
 
 // ProductCondition 商品成色枚举。
 const (
-	ProductConditionBrandNew     string = "brand_new"     // 全新
-	ProductConditionAlmostNew    string = "almost_new"    // 几乎全新
-	ProductConditionLightlyUsed  string = "lightly_used"  // 轻微使用
+	ProductConditionBrandNew      string = "brand_new"      // 全新
+	ProductConditionAlmostNew     string = "almost_new"     // 几乎全新
+	ProductConditionLightlyUsed   string = "lightly_used"   // 轻微使用
 	ProductConditionObviouslyUsed string = "obviously_used" // 明显使用
 )
 
@@ -36,6 +36,13 @@ const (
 	ProductStatusOffShelf string = "off_shelf" // 已下架
 )
 
+// ProductReviewStatus 商品平台审核状态枚举（与前端 constants/index.ts 同步维护）。
+const (
+	ProductReviewPending  string = "pending_review" // 待审核（新发布 / 修改重提 / 复审）
+	ProductReviewApproved string = "approved"       // 审核通过（仅通过商品可进入大厅/搜索/加购/下单）
+	ProductReviewRejected string = "rejected"       // 审核驳回（卖家可修改后重新提交）
+)
+
 // UserRole 用户角色枚举。
 const (
 	UserRoleUser  string = "user"  // 普通用户
@@ -51,7 +58,7 @@ const (
 
 // OrderStatusTransitions 订单状态机：允许的流转映射（新状态 → 允许的前置状态集合）。
 var OrderStatusTransitions = map[string][]string{
-	OrderStatusPendingPayment: {OrderStatusPendingPayment},
+	OrderStatusPendingPayment:  {OrderStatusPendingPayment},
 	OrderStatusPendingShipment: {OrderStatusPendingPayment},
 	OrderStatusShipped:         {OrderStatusPendingShipment},
 	OrderStatusReceived:        {OrderStatusShipped},
@@ -93,6 +100,34 @@ func ValidProductStatus(status string) bool {
 	switch status {
 	case ProductStatusOnSale, ProductStatusSold, ProductStatusOffShelf:
 		return true
+	}
+	return false
+}
+
+// ProductReviewTransitions 商品审核状态机：允许的流转映射（新状态 → 允许的前置状态集合）。
+// 卖家：新发布（无前置）进入待审、修改已上架（approved）重新送审、驳回（rejected）后修改重提；
+// 管理员：仅能在待审（pending_review）时给出通过/驳回。待审中重复提交/重复审核不改变状态。
+var ProductReviewTransitions = map[string][]string{
+	ProductReviewPending:  {"", ProductReviewApproved, ProductReviewRejected},
+	ProductReviewApproved: {ProductReviewPending},
+	ProductReviewRejected: {ProductReviewPending},
+}
+
+// ValidProductReviewStatus 校验商品审核状态值是否合法。
+func ValidProductReviewStatus(status string) bool {
+	switch status {
+	case ProductReviewPending, ProductReviewApproved, ProductReviewRejected:
+		return true
+	}
+	return false
+}
+
+// CanReviewTransition 审核状态机校验（service 状态机、并发审核幂等共用）。
+func CanReviewTransition(from, to string) bool {
+	for _, s := range ProductReviewTransitions[to] {
+		if s == from {
+			return true
+		}
 	}
 	return false
 }

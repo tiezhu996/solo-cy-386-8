@@ -52,6 +52,15 @@ export function formatProductStatus(text: string): string {
   return map[text] ?? text
 }
 
+export function formatProductReviewStatus(text: string): string {
+  const map: Record<string, string> = {
+    pending_review: '待审核',
+    approved: '审核通过',
+    rejected: '已驳回'
+  }
+  return map[text] ?? '未审核'
+}
+
 export function formatRating(text: string): string {
   const map: Record<string, string> = {
     good: '好评',

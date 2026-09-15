@@ -36,6 +36,7 @@ func Connect(cfg *config.Config, log *slog.Logger) (*gorm.DB, error) {
 		&model.Message{},
 		&model.Review{},
 		&model.AuditLog{},
+		&model.ProductReview{},
 	}
 	sqlDB, err := db.DB()
 	if err != nil {
@@ -45,10 +46,20 @@ func Connect(cfg *config.Config, log *slog.Logger) (*gorm.DB, error) {
 	sqlDB.SetMaxIdleConns(10)
 	sqlDB.SetConnMaxLifetime(30 * time.Minute)
 
+	// 审核闭环上线前的存量商品：迁移前记录列是否已存在，不存在时迁移后把存量商品统一置为审核通过，
+	// 保证“原有已上架商品保持可售”，而新列默认值仍为 pending_review（新发布必须过审）。
+	reviewColumnExisted := db.Migrator().HasColumn(&model.Product{}, "ReviewStatus")
+
 	if err := db.AutoMigrate(models...); err != nil {
 		return nil, fmt.Errorf("auto migrate: %w", err)
 	}
 	log.Info("database migrated", "models", len(models))
+
+	if !reviewColumnExisted {
+		if err := backfillLegacyProducts(db); err != nil {
+			return nil, fmt.Errorf("backfill legacy product review status: %w", err)
+		}
+	}
 
 	// 创建演示管理员账号：admin/admin123（仅当不存在时）。
 	var adminCount int64

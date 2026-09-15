@@ -10,8 +10,9 @@ import (
 func RegisterProductRoutes(api *gin.RouterGroup, h *handler.ProductHandler, secret string) {
 	public := api.Group("/products")
 	{
+		// 详情使用可选认证：审核未通过商品仅卖家本人/管理员可见。
 		public.GET("", h.List)
-		public.GET("/:id", h.Detail)
+		public.GET("/:id", middleware.OptionalAuth(secret), h.Detail)
 	}
 	authed := api.Group("/products", middleware.Auth(secret))
 	{

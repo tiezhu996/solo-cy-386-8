@@ -35,6 +35,10 @@ func (s *CartService) Add(userID uint, req dto.CartAddRequest) (*model.CartItem,
 	if product.SellerID == userID {
 		return nil, utilAppError(constants.CodeConflict, "加入购物车失败：不能购买自己发布的商品（卖家 id="+fmt.Sprint(userID)+"）", nil)
 	}
+	// 审核通过前不能加购（待审核/复审/驳回商品一律拦截）。
+	if product.ReviewStatus != constants.ProductReviewApproved {
+		return nil, utilAppError(constants.CodeProductReviewing, "加入购物车失败：商品 id="+fmt.Sprint(req.ProductID)+" 当前审核状态为 "+product.ReviewStatus+"，通过前不可加购", nil)
+	}
 	if product.Status != constants.ProductStatusOnSale {
 		return nil, utilAppError(constants.CodeProductOffShelf, "加入购物车失败：商品 id="+fmt.Sprint(req.ProductID)+" 当前状态为 "+product.Status+" 不可购买", nil)
 	}

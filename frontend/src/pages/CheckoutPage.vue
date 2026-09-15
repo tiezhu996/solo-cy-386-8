@@ -2,6 +2,14 @@
   <el-card v-loading="loading">
     <h2>确认订单</h2>
     <template v-if="product">
+      <el-alert
+        v-if="!purchasable"
+        :title="product.review_status === 'rejected' ? '该商品已被审核驳回，暂时无法下单' : '该商品正在平台审核中，审核通过后才能下单'"
+        type="warning"
+        :closable="false"
+        show-icon
+        class="block-alert"
+      />
       <el-descriptions :column="2" border>
         <el-descriptions-item label="商品">{{ product.title }}</el-descriptions-item>
         <el-descriptions-item label="卖家">{{ product.seller?.nickname || `用户${product.seller_id}` }}</el-descriptions-item>
@@ -29,7 +37,7 @@
         <el-input v-model="remark" placeholder="给卖家的留言（选填）" />
       </el-form-item>
 
-      <el-button type="danger" size="large" :loading="submitting" :disabled="!addressId" @click="submit">提交订单</el-button>
+      <el-button type="danger" size="large" :loading="submitting" :disabled="!addressId || !purchasable" @click="submit">提交订单</el-button>
     </template>
   </el-card>
 
@@ -51,7 +59,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import * as productApi from '../api/product'
@@ -71,6 +79,8 @@ const quantity = 1
 const remark = ref('')
 const showAddrDialog = ref(false)
 const addrForm = ref({ receiver_name: '', phone: '', province: '', city: '', district: '', detail: '', is_default: false })
+
+const purchasable = computed(() => product.value?.review_status === 'approved' && product.value?.status === 'on_sale')
 
 onMounted(async () => {
   loading.value = true
@@ -118,6 +128,9 @@ async function submit() {
 <style scoped>
 .block {
   margin: 20px 0;
+}
+.block-alert {
+  margin-bottom: 16px;
 }
 .addr-radio {
   display: block;

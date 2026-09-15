@@ -26,6 +26,11 @@ const (
 	CodeFileTooLarge       = 10015 // 文件过大
 	CodeUnsupportedMedia   = 10016 // 不支持的图片格式
 	CodeRedisUnavailable   = 10017 // 消息通道不可用
+	CodeProductReviewing   = 10018 // 商品待审核，不可购买
+	CodeReviewNotFound     = 10019 // 审核记录不存在
+	CodeReviewStateInvalid = 10020 // 商品不在待审核状态，重复审核无效
+	CodeReviewDuplicate    = 10021 // 商品已在审核队列，请勿重复提交
+	CodeReviewReasonEmpty  = 10022 // 驳回必须填写原因
 )
 
 // ErrorCodeMessages 错误码对应的默认提示文案（constants/messages.go 中另有接口文案）。
@@ -54,4 +59,9 @@ var ErrorCodeMessages = map[int]string{
 	CodeFileTooLarge:       "上传图片不能超过 5MB",
 	CodeUnsupportedMedia:   "仅支持 jpg/jpeg/png/webp 图片",
 	CodeRedisUnavailable:   "实时消息通道暂不可用",
+	CodeProductReviewing:   "商品正在平台审核中，通过后才能购买",
+	CodeReviewNotFound:     "商品审核记录不存在",
+	CodeReviewStateInvalid: "商品当前不在待审核状态，审核结果无效",
+	CodeReviewDuplicate:    "商品已在审核队列中，请勿重复提交",
+	CodeReviewReasonEmpty:  "驳回商品必须填写驳回原因",
 }

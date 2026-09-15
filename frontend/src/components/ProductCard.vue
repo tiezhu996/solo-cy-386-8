@@ -6,6 +6,14 @@
       <el-tag class="status-tag" :type="product.status === 'on_sale' ? 'success' : 'info'" size="small">
         {{ formatProductStatus(product.status) }}
       </el-tag>
+      <el-tag
+        v-if="product.review_status && product.review_status !== 'approved'"
+        class="review-tag"
+        :type="product.review_status === 'rejected' ? 'danger' : 'warning'"
+        size="small"
+      >
+        {{ formatProductReviewStatus(product.review_status) }}
+      </el-tag>
     </div>
     <div class="info">
       <div class="title">{{ product.title }}</div>
@@ -23,7 +31,7 @@
 
 <script setup lang="ts">
 import type { ProductVO } from '../api/types'
-import { formatPrice, formatCondition, formatCategory, formatProductStatus } from '../utils/format'
+import { formatPrice, formatCondition, formatCategory, formatProductStatus, formatProductReviewStatus } from '../utils/format'
 
 defineProps<{ product: ProductVO }>()
 </script>
@@ -59,6 +67,11 @@ defineProps<{ product: ProductVO }>()
   position: absolute;
   top: 8px;
   left: 8px;
+}
+.review-tag {
+  position: absolute;
+  top: 8px;
+  right: 8px;
 }
 .info {
   padding: 10px 12px;

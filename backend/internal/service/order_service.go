@@ -45,6 +45,10 @@ func (s *OrderService) Create(buyerID uint, req dto.OrderCreateRequest) (*model.
 			}
 			return fmt.Errorf("lock product %d: %w", req.ProductID, err)
 		}
+		// 审核通过前不能下单（新发布/修改复审期间商品处于待审核）。
+		if product.ReviewStatus != constants.ProductReviewApproved {
+			return utilAppError(constants.CodeProductReviewing, "下单失败：商品 id="+fmt.Sprint(req.ProductID)+" 当前审核状态为 "+product.ReviewStatus+"，审核通过前不可下单", nil)
+		}
 		if product.Status != constants.ProductStatusOnSale {
 			return utilAppError(constants.CodeProductSold, "下单失败：商品 id="+fmt.Sprint(req.ProductID)+" 当前状态为 "+product.Status+"，无法购买", nil)
 		}
@@ -237,10 +241,14 @@ func (s *OrderService) Cancel(userID, orderID uint, role string) (*model.Order, 
 		if err := s.orderRepo.UpdateStatusForUpdate(tx, orderID, constants.OrderStatusCancelled, map[string]interface{}{"cancelled_at": &now}); err != nil {
 			return fmt.Errorf("cancel order %d: %w", orderID, err)
 		}
-		// 订单取消后商品重新上架。
+		// 订单取消后商品重新上架；若商品正处于复审/驳回（卖家在下单后修改过），则继续下架。
 		o.Status = constants.OrderStatusCancelled
-		if err := s.productRepo.UpdateStatusForUpdate(tx, o.ProductID, constants.ProductStatusOnSale); err != nil {
+		restored, err := s.productRepo.RestoreOnSaleIfApprovedForUpdate(tx, o.ProductID)
+		if err != nil {
 			return fmt.Errorf("restore product %d on sale: %w", o.ProductID, err)
+		}
+		if !restored {
+			s.logger.Warn("product not restored on cancel, review pending or rejected", "product_id", o.ProductID, "order_no", o.OrderNo)
 		}
 		order = o
 		return nil

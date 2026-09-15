@@ -11,6 +11,7 @@
           私信
           <el-badge v-if="messageStore.unread > 0" :value="messageStore.unread" class="badge" />
         </router-link>
+        <router-link v-if="userStore.isAdmin" to="/admin/reviews">商品审核</router-link>
         <router-link v-if="userStore.isAdmin" to="/admin/audits">审计日志</router-link>
       </nav>
       <div class="actions">

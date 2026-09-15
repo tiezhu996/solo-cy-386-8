@@ -11,15 +11,21 @@ import (
 // ProductRepository 商品仓储接口。
 type ProductRepository interface {
 	Create(product *model.Product) error
+	CreateTx(tx *gorm.DB, product *model.Product) error
 	GetByID(id uint) (*model.Product, error)
 	GetByIDForUpdate(tx *gorm.DB, id uint) (*model.Product, error)
 	List(query map[string]interface{}, sortBy string, page, pageSize int) ([]model.Product, int64, error)
 	ListBySeller(sellerID uint, page, pageSize int) ([]model.Product, int64, error)
 	ListByIDs(ids []uint) ([]model.Product, error)
 	Update(product *model.Product) error
+	UpdateTx(tx *gorm.DB, product *model.Product) error
 	IncrViewCount(id uint) error
 	IncrFavoriteCount(tx *gorm.DB, id uint, delta int) error
 	UpdateStatusForUpdate(tx *gorm.DB, id uint, status string) error
+	// UpdateReviewForUpdate 事务内同步商品上下架状态、审核状态、审核轮次与驳回原因。
+	UpdateReviewForUpdate(tx *gorm.DB, id uint, updates map[string]interface{}) error
+	// RestoreOnSaleIfApprovedForUpdate 订单取消时：仅当商品审核通过才恢复在售，复审/驳回期间继续下架。
+	RestoreOnSaleIfApprovedForUpdate(tx *gorm.DB, id uint) (bool, error)
 }
 
 type productRepo struct {
@@ -33,6 +39,16 @@ func NewProductRepository(db *gorm.DB) ProductRepository {
 
 func (r *productRepo) Create(product *model.Product) error {
 	if err := r.db.Create(product).Error; err != nil {
+		return fmt.Errorf("create product: %w", err)
+	}
+	return nil
+}
+
+func (r *productRepo) CreateTx(tx *gorm.DB, product *model.Product) error {
+	if tx == nil {
+		tx = r.db
+	}
+	if err := tx.Create(product).Error; err != nil {
 		return fmt.Errorf("create product: %w", err)
 	}
 	return nil
@@ -103,6 +119,9 @@ func (r *productRepo) List(query map[string]interface{}, sortBy string, page, pa
 	if v, ok := query["status"]; ok && v != "" {
 		q = q.Where("status = ?", v)
 	}
+	if v, ok := query["review_status"]; ok && v != "" {
+		q = q.Where("review_status = ?", v)
+	}
 	if v, ok := query["seller_id"]; ok && numVal(v) > 0 {
 		q = q.Where("seller_id = ?", v)
 	}
@@ -157,6 +176,16 @@ func (r *productRepo) Update(product *model.Product) error {
 	return nil
 }
 
+func (r *productRepo) UpdateTx(tx *gorm.DB, product *model.Product) error {
+	if tx == nil {
+		tx = r.db
+	}
+	if err := tx.Save(product).Error; err != nil {
+		return fmt.Errorf("update product %d: %w", product.ID, err)
+	}
+	return nil
+}
+
 func (r *productRepo) IncrViewCount(id uint) error {
 	res := r.db.Model(&model.Product{}).Where("id = ?", id).UpdateColumn("view_count", gorm.Expr("view_count + 1"))
 	if res.Error != nil {
@@ -185,4 +214,35 @@ func (r *productRepo) UpdateStatusForUpdate(tx *gorm.DB, id uint, status string)
 		return ErrNotFound
 	}
 	return nil
+}
+
+func (r *productRepo) UpdateReviewForUpdate(tx *gorm.DB, id uint, updates map[string]interface{}) error {
+	if tx == nil {
+		tx = r.db
+	}
+	res := tx.Model(&model.Product{}).Where("id = ?", id).Updates(updates)
+	if res.Error != nil {
+		return fmt.Errorf("update product %d review fields: %w", id, res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (r *productRepo) RestoreOnSaleIfApprovedForUpdate(tx *gorm.DB, id uint) (bool, error) {
+	var exists int64
+	if err := tx.Model(&model.Product{}).Where("id = ?", id).Count(&exists).Error; err != nil {
+		return false, fmt.Errorf("check product %d for restore: %w", id, err)
+	}
+	if exists == 0 {
+		return false, ErrNotFound
+	}
+	res := tx.Model(&model.Product{}).
+		Where("id = ? AND review_status = ?", id, "approved").
+		Update("status", "on_sale")
+	if res.Error != nil {
+		return false, fmt.Errorf("restore product %d on sale: %w", id, res.Error)
+	}
+	return res.RowsAffected > 0, nil
 }

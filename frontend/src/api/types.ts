@@ -36,11 +36,28 @@ export interface ProductVO {
   category: string
   images: string[]
   status: string
+  review_status: string
+  review_round: number
+  reject_reason: string
   view_count: number
   favorite_count: number
   created_at: string
   seller?: UserVO
   is_favorite?: boolean
+}
+
+export interface ProductReviewVO {
+  id: number
+  product_id: number
+  seller_id: number
+  round: number
+  status: string
+  reason: string
+  reviewer_id: number
+  reviewer?: UserVO
+  product?: ProductVO
+  created_at: string
+  reviewed_at: string
 }
 
 export interface AddressVO {

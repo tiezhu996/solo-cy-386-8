@@ -14,12 +14,24 @@
         <div v-loading="subLoading">
           <el-table :data="myProducts" v-if="myProducts.length">
             <el-table-column prop="title" label="商品" />
-            <el-table-column label="售价" width="120"><template #default="{ row }">¥{{ formatPrice(row.price) }}</template></el-table-column>
-            <el-table-column label="状态" width="120"><template #default="{ row }"><StatusBadge type="product" :value="row.status" /></template></el-table-column>
-            <el-table-column label="浏览" width="100" prop="view_count" />
-            <el-table-column label="操作" width="160">
+            <el-table-column label="售价" width="110"><template #default="{ row }">¥{{ formatPrice(row.price) }}</template></el-table-column>
+            <el-table-column label="售卖状态" width="100">
+              <template #default="{ row }"><StatusBadge type="product" :value="row.status" /></template>
+            </el-table-column>
+            <el-table-column label="审核状态" width="200">
+              <template #default="{ row }">
+                <StatusBadge type="review" :value="row.review_status" />
+                <span v-if="row.review_round > 1" class="round">第{{ row.review_round }}轮</span>
+                <el-tooltip v-if="row.review_status === 'rejected' && row.reject_reason" :content="row.reject_reason" placement="top">
+                  <el-tag type="danger" size="small" effect="plain" class="reason-tag">驳回原因</el-tag>
+                </el-tooltip>
+              </template>
+            </el-table-column>
+            <el-table-column label="浏览" width="80" prop="view_count" />
+            <el-table-column label="操作" width="240">
               <template #default="{ row }">
                 <el-button link type="primary" @click="$router.push(`/products/${row.id}`)">查看</el-button>
+                <el-button v-if="row.review_status === 'rejected'" link type="warning" @click="$router.push(`/products/${row.id}/edit`)">修改重提</el-button>
                 <el-button v-if="row.status === 'on_sale'" link type="warning" @click="offShelf(row.id)">下架</el-button>
               </template>
             </el-table-column>
@@ -189,5 +201,13 @@ async function removeAddress(id: number) {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 16px;
+}
+.round {
+  margin-left: 6px;
+  font-size: 12px;
+  color: #909399;
+}
+.reason-tag {
+  margin-left: 6px;
 }
 </style>

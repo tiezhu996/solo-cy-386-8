@@ -9,12 +9,14 @@ const router = createRouter({
     { path: '/search', name: 'search', component: () => import('../pages/SearchPage.vue') },
     { path: '/products/:id', name: 'product-detail', component: () => import('../pages/ProductDetailPage.vue') },
     { path: '/products/create', name: 'product-create', component: () => import('../pages/ProductCreatePage.vue'), meta: { requiresAuth: true } },
+    { path: '/products/:id/edit', name: 'product-edit', component: () => import('../pages/ProductEditPage.vue'), meta: { requiresAuth: true } },
     { path: '/cart', name: 'cart', component: () => import('../pages/CartPage.vue'), meta: { requiresAuth: true } },
     { path: '/checkout', name: 'checkout', component: () => import('../pages/CheckoutPage.vue'), meta: { requiresAuth: true } },
     { path: '/orders', name: 'orders', component: () => import('../pages/OrdersPage.vue'), meta: { requiresAuth: true } },
     { path: '/messages', name: 'messages', component: () => import('../pages/MessagesPage.vue'), meta: { requiresAuth: true } },
     { path: '/profile', name: 'profile', component: () => import('../pages/ProfilePage.vue'), meta: { requiresAuth: true } },
     { path: '/admin/audits', name: 'admin-audits', component: () => import('../pages/AdminAuditPage.vue'), meta: { requiresAuth: true, requiresAdmin: true } },
+    { path: '/admin/reviews', name: 'admin-reviews', component: () => import('../pages/AdminReviewPage.vue'), meta: { requiresAuth: true, requiresAdmin: true } },
     { path: '/login', name: 'login', component: () => import('../pages/LoginPage.vue') },
     { path: '/register', name: 'register', component: () => import('../pages/RegisterPage.vue') }
   ]

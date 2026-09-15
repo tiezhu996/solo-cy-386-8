@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"github.com/marketpal/marketpal/internal/constants"
 	"github.com/marketpal/marketpal/internal/dto"
 	"github.com/marketpal/marketpal/internal/middleware"
 	"github.com/marketpal/marketpal/internal/service"
@@ -33,7 +34,7 @@ func (h *ProductHandler) Create(c *gin.Context) {
 		util.AbortWithError(c, err)
 		return
 	}
-	util.OKMessage(c, "商品发布成功", dto.FromProduct(product, false))
+	util.OKMessage(c, constants.MsgProductCreated, dto.FromProduct(product, false))
 }
 
 // Update PUT /api/v1/products/:id
@@ -53,7 +54,7 @@ func (h *ProductHandler) Update(c *gin.Context) {
 		util.AbortWithError(c, err)
 		return
 	}
-	util.OKMessage(c, "商品已更新", dto.FromProduct(product, false))
+	util.OKMessage(c, constants.MsgProductUpdated, dto.FromProduct(product, false))
 }
 
 // OffShelf POST /api/v1/products/:id/off-shelf
@@ -78,7 +79,7 @@ func (h *ProductHandler) Detail(c *gin.Context) {
 		util.Fail(c, http.StatusBadRequest, 40000, "商品详情失败：商品 id 参数非法")
 		return
 	}
-	product, err := h.svc.GetDetail(uint(id))
+	product, err := h.svc.GetDetail(uint(id), middleware.GetUserID(c), middleware.GetRole(c))
 	if err != nil {
 		util.AbortWithError(c, err)
 		return

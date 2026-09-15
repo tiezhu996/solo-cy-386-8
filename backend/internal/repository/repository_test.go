@@ -18,6 +18,7 @@ func newTestDB(t *testing.T) *gorm.DB {
 	models := []interface{}{
 		&model.User{}, &model.Product{}, &model.Favorite{}, &model.Address{},
 		&model.CartItem{}, &model.Order{}, &model.Message{}, &model.Review{}, &model.AuditLog{},
+		&model.ProductReview{},
 	}
 	if err := db.AutoMigrate(models...); err != nil {
 		t.Fatalf("auto migrate: %v", err)
@@ -94,6 +95,46 @@ func TestUserRepository(t *testing.T) {
 			t.Fatalf("expected 2 users, got total=%d len=%d", total, len(users))
 		}
 	})
+}
+
+func TestProductReviewDecideAtomic(t *testing.T) {
+	db := newTestDB(t)
+	pRepo := NewProductRepository(db)
+	rRepo := NewProductReviewRepository(db)
+
+	p := &model.Product{SellerID: 1, Title: "相机", Description: "二手相机", OriginalPrice: 3000, Price: 1800, Condition: "almost_new", Category: "digital", Status: "off_shelf", ReviewStatus: "pending_review", ReviewRound: 1}
+	if err := pRepo.Create(p); err != nil {
+		t.Fatalf("create product: %v", err)
+	}
+	rv := &model.ProductReview{ProductID: p.ID, SellerID: 1, Round: 1, Status: "pending_review"}
+	if err := rRepo.CreateTx(nil, rv); err != nil {
+		t.Fatalf("create review: %v", err)
+	}
+
+	// 模拟两个管理员并发审核：条件更新只允许一个事务把 pending_review 改成最终结果。
+	if err := rRepo.DecideForUpdate(nil, rv.ID, 99, "approved", "", nil); err != nil {
+		t.Fatalf("first decide: %v", err)
+	}
+	if err := rRepo.DecideForUpdate(nil, rv.ID, 100, "rejected", "重复审核", nil); err != ErrReviewAlreadyDecided {
+		t.Fatalf("expected ErrReviewAlreadyDecided, got %v", err)
+	}
+	got, err := rRepo.GetByID(rv.ID)
+	if err != nil {
+		t.Fatalf("get review: %v", err)
+	}
+	if got.Status != "approved" || got.ReviewerID != 99 || got.Reason != "" {
+		t.Fatalf("loser must not overwrite winner, got status=%s reviewer=%d reason=%q", got.Status, got.ReviewerID, got.Reason)
+	}
+
+	// 驳回后新一轮送审与历史回读。
+	rv2 := &model.ProductReview{ProductID: p.ID, SellerID: 1, Round: 2, Status: "pending_review"}
+	if err := rRepo.CreateTx(nil, rv2); err != nil {
+		t.Fatalf("create round 2 review: %v", err)
+	}
+	history, err := rRepo.ListByProduct(p.ID)
+	if err != nil || len(history) != 2 {
+		t.Fatalf("expected 2 history records, got %d err=%v", len(history), err)
+	}
 }
 
 func TestProductRepository(t *testing.T) {

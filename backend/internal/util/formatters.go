@@ -15,6 +15,14 @@ func FormatTime(t time.Time) string {
 	return t.Format("2006-01-02 15:04:05")
 }
 
+// FormatTimePtr 可空时间指针格式化（审核时间等可空字段）。
+func FormatTimePtr(t *time.Time) string {
+	if t == nil {
+		return ""
+	}
+	return FormatTime(*t)
+}
+
 // FormatOrderStatusText 订单状态 → 中文文案（与前端 constants/order.ts 状态徽标同步）。
 func FormatOrderStatusText(status string) string {
 	switch status {
@@ -82,6 +90,20 @@ func FormatProductStatusText(status string) string {
 		return "已下架"
 	default:
 		return "未知"
+	}
+}
+
+// FormatProductReviewStatusText 商品审核状态 → 中文文案（与前端 constants/index.ts 徽标同步）。
+func FormatProductReviewStatusText(status string) string {
+	switch status {
+	case "pending_review":
+		return "待审核"
+	case "approved":
+		return "审核通过"
+	case "rejected":
+		return "已驳回"
+	default:
+		return "未审核"
 	}
 }
 

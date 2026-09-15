@@ -70,6 +70,25 @@ export const ProductStatusText: Record<string, string> = {
   [ProductStatus.OFF_SHELF]: '已下架'
 }
 
+// 商品平台审核状态（与后端 internal/constants/enums.go ProductReview* 同步）。
+export const ProductReviewStatus = {
+  PENDING: 'pending_review',
+  APPROVED: 'approved',
+  REJECTED: 'rejected'
+} as const
+
+export const ProductReviewStatusText: Record<string, string> = {
+  [ProductReviewStatus.PENDING]: '待审核',
+  [ProductReviewStatus.APPROVED]: '审核通过',
+  [ProductReviewStatus.REJECTED]: '已驳回'
+}
+
+export const ProductReviewStatusTag: Record<string, string> = {
+  [ProductReviewStatus.PENDING]: 'warning',
+  [ProductReviewStatus.APPROVED]: 'success',
+  [ProductReviewStatus.REJECTED]: 'danger'
+}
+
 export const UserRole = {
   USER: 'user',
   ADMIN: 'admin'

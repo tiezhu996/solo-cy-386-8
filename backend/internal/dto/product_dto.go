@@ -24,34 +24,37 @@ type ProductUpdateRequest struct {
 
 // ProductQuery 商品列表查询入参（支持关键词/分类/价格区间/成色/排序）。
 type ProductQuery struct {
-	Keyword    string  `form:"keyword"`
-	Category   string  `form:"category" binding:"omitempty,oneof=digital clothing books home sports other"`
-	Condition  string  `form:"condition" binding:"omitempty,oneof=brand_new almost_new lightly_used obviously_used"`
-	MinPrice   float64 `form:"min_price" binding:"omitempty,gte=0"`
-	MaxPrice   float64 `form:"max_price" binding:"omitempty,gte=0"`
-	SortBy     string  `form:"sort_by" binding:"omitempty,oneof=price price_desc time time_desc"`
-	Status     string  `form:"status" binding:"omitempty,oneof=on_sale sold off_shelf"`
-	Page       int     `form:"page" binding:"omitempty,min=1"`
-	PageSize   int     `form:"page_size" binding:"omitempty,min=1,max=50"`
+	Keyword   string  `form:"keyword"`
+	Category  string  `form:"category" binding:"omitempty,oneof=digital clothing books home sports other"`
+	Condition string  `form:"condition" binding:"omitempty,oneof=brand_new almost_new lightly_used obviously_used"`
+	MinPrice  float64 `form:"min_price" binding:"omitempty,gte=0"`
+	MaxPrice  float64 `form:"max_price" binding:"omitempty,gte=0"`
+	SortBy    string  `form:"sort_by" binding:"omitempty,oneof=price price_desc time time_desc"`
+	Status    string  `form:"status" binding:"omitempty,oneof=on_sale sold off_shelf"`
+	Page      int     `form:"page" binding:"omitempty,min=1"`
+	PageSize  int     `form:"page_size" binding:"omitempty,min=1,max=50"`
 }
 
 // ProductVO 商品视图对象。
 type ProductVO struct {
-	ID            uint      `json:"id"`
-	SellerID      uint      `json:"seller_id"`
-	Title         string    `json:"title"`
-	Description   string    `json:"description"`
-	OriginalPrice float64   `json:"original_price"`
-	Price         float64   `json:"price"`
-	Condition     string    `json:"condition"`
-	Category      string    `json:"category"`
-	Images        []string  `json:"images"`
-	Status        string    `json:"status"`
-	ViewCount     int       `json:"view_count"`
-	FavoriteCount int       `json:"favorite_count"`
-	CreatedAt     string    `json:"created_at"`
-	Seller        *UserVO   `json:"seller,omitempty"`
-	IsFavorite    bool      `json:"is_favorite"`
+	ID            uint     `json:"id"`
+	SellerID      uint     `json:"seller_id"`
+	Title         string   `json:"title"`
+	Description   string   `json:"description"`
+	OriginalPrice float64  `json:"original_price"`
+	Price         float64  `json:"price"`
+	Condition     string   `json:"condition"`
+	Category      string   `json:"category"`
+	Images        []string `json:"images"`
+	Status        string   `json:"status"`
+	ReviewStatus  string   `json:"review_status"`
+	ReviewRound   int      `json:"review_round"`
+	RejectReason  string   `json:"reject_reason"`
+	ViewCount     int      `json:"view_count"`
+	FavoriteCount int      `json:"favorite_count"`
+	CreatedAt     string   `json:"created_at"`
+	Seller        *UserVO  `json:"seller,omitempty"`
+	IsFavorite    bool     `json:"is_favorite"`
 }
 
 // ProductListResponse 商品列表分页响应。

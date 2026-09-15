@@ -48,10 +48,12 @@ func main() {
 	messageRepo := repository.NewMessageRepository(db)
 	reviewRepo := repository.NewReviewRepository(db)
 	auditRepo := repository.NewAuditRepository(db)
+	productReviewRepo := repository.NewProductReviewRepository(db)
 
 	// 服务层装配（构造器注入）。
 	userService := service.NewUserService(userRepo, logger, cfg.JWTSecret, cfg.JWTExpireDuration())
-	productService := service.NewProductService(productRepo, favoriteRepo, logger)
+	productService := service.NewProductService(db, productRepo, favoriteRepo, productReviewRepo, logger)
+	productReviewService := service.NewProductReviewService(db, productReviewRepo, productRepo, logger)
 	addressService := service.NewAddressService(addressRepo, logger)
 	cartService := service.NewCartService(cartRepo, productRepo, logger)
 	orderService := service.NewOrderService(db, orderRepo, productRepo, addressRepo, cartRepo, logger)
@@ -69,6 +71,7 @@ func main() {
 	messageHandler := handler.NewMessageHandler(messageService)
 	reviewHandler := handler.NewReviewHandler(reviewService)
 	auditHandler := handler.NewAuditHandler(auditService)
+	productReviewHandler := handler.NewProductReviewHandler(productReviewService)
 	wsHandler := handler.NewWSHandler(hub, logger)
 	uploadHandler := handler.NewUploadHandler(cfg.UploadDir, cfg.PublicURL)
 
@@ -78,7 +81,7 @@ func main() {
 	engine := gin.New()
 	router.Register(engine, cfg, logger,
 		userHandler, productHandler, addressHandler, cartHandler, orderHandler,
-		messageHandler, reviewHandler, auditHandler, wsHandler, uploadHandler, auditService)
+		messageHandler, reviewHandler, auditHandler, productReviewHandler, wsHandler, uploadHandler, auditService)
 
 	server := &http.Server{
 		Addr:              ":" + cfg.Port,

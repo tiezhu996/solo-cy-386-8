@@ -37,3 +37,22 @@ func Auth(secret string) gin.HandlerFunc {
 		c.Next()
 	}
 }
+
+// OptionalAuth 可选认证：携带合法 Token 时注入用户上下文，未携带或 Token 非法也放行（用于商品详情等公开页）。
+func OptionalAuth(secret string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		header := c.GetHeader("Authorization")
+		tokenStr := c.Query("token")
+		if header != "" && strings.HasPrefix(header, "Bearer ") {
+			tokenStr = strings.TrimPrefix(header, "Bearer ")
+		}
+		if tokenStr != "" {
+			if claims, err := util.ParseToken(secret, tokenStr); err == nil {
+				c.Set(ctxUserID, claims.UserID)
+				c.Set(ctxUsername, claims.Username)
+				c.Set(ctxRole, claims.Role)
+			}
+		}
+		c.Next()
+	}
+}

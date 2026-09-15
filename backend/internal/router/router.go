@@ -23,6 +23,7 @@ func Register(
 	messageHandler *handler.MessageHandler,
 	reviewHandler *handler.ReviewHandler,
 	auditHandler *handler.AuditHandler,
+	productReviewHandler *handler.ProductReviewHandler,
 	wsHandler *handler.WSHandler,
 	uploadHandler *handler.UploadHandler,
 	auditService *service.AuditService,
@@ -45,6 +46,7 @@ func Register(
 	{
 		RegisterUserRoutes(api, userHandler, cfg.JWTSecret)
 		RegisterProductRoutes(api, productHandler, cfg.JWTSecret)
+		RegisterProductReviewRoutes(api, productReviewHandler, cfg.JWTSecret)
 		RegisterAddressRoutes(api, addressHandler, cfg.JWTSecret)
 		RegisterCartRoutes(api, cartHandler, cfg.JWTSecret)
 		RegisterOrderRoutes(api, orderHandler, cfg.JWTSecret)
@@ -52,4 +54,5 @@ func Register(
 		RegisterReviewRoutes(api, reviewHandler, cfg.JWTSecret)
 		RegisterAuditRoutes(api, auditHandler, cfg.JWTSecret)
 		RegisterUploadRoutes(api, uploadHandler, cfg.JWTSecret)
-	}}
+	}
+}

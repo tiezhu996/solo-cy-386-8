@@ -34,10 +34,11 @@ func ErrorHandler(logger *slog.Logger) gin.HandlerFunc {
 				status = http.StatusForbidden
 			case constants.CodeNotFound, constants.CodeUserNotFound, constants.CodeProductNotFound,
 				constants.CodeOrderNotFound, constants.CodeAddressNotFound, constants.CodeCartItemNotFound,
-				constants.CodeMessageNotFound:
+				constants.CodeMessageNotFound, constants.CodeReviewNotFound:
 				status = http.StatusNotFound
 			case constants.CodeConflict, constants.CodeOrderStateInvalid, constants.CodeProductSold,
-				constants.CodeReviewExists:
+				constants.CodeReviewExists, constants.CodeProductReviewing, constants.CodeReviewStateInvalid,
+				constants.CodeReviewDuplicate:
 				status = http.StatusConflict
 			case constants.CodeInternalError:
 				status = http.StatusInternalServerError
