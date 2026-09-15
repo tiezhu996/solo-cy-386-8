@@ -147,7 +147,7 @@ func (f *fakeProductReviewRepo) MaxRound(tx *gorm.DB, productID uint) (int, erro
 	}
 	return rv.Round, nil
 }
-func (f *fakeProductReviewRepo) DecideForUpdate(tx *gorm.DB, id, reviewerID uint, status, reason string, reviewedAt interface{}) error {
+func (f *fakeProductReviewRepo) DecideForUpdate(tx *gorm.DB, id uint, reviewerID *uint, status, reason string, reviewedAt interface{}) error {
 	rv, ok := f.reviews[id]
 	if !ok {
 		return repository.ErrNotFound
@@ -199,6 +199,9 @@ func (f *fakeFavoriteRepo) ListByUser(userID uint, page, pageSize int) ([]model.
 func key(a, b uint) string {
 	return strconv.FormatUint(uint64(a), 10) + "-" + strconv.FormatUint(uint64(b), 10)
 }
+
+// uintPtr 测试辅助：构造审核人 ID 指针。
+func uintPtr(v uint) *uint { return &v }
 
 func newTestProductService() (*ProductService, *fakeProductRepo, *fakeFavoriteRepo, *fakeProductReviewRepo) {
 	pr := newFakeProductRepo()
@@ -261,7 +264,7 @@ func TestProductServiceReviewFlow(t *testing.T) {
 		t.Fatalf("expected round 1 pending review, got %+v", rv)
 	}
 	now := time.Now()
-	if err := rr.DecideForUpdate(nil, rv.ID, 99, constants.ProductReviewRejected, "图片不清晰", &now); err != nil {
+	if err := rr.DecideForUpdate(nil, rv.ID, uintPtr(99), constants.ProductReviewRejected, "图片不清晰", &now); err != nil {
 		t.Fatalf("first decide failed: %v", err)
 	}
 	// 模拟审核 service 同步商品审核结果（真实链路在 ProductReviewService.Decide 中完成）。
@@ -271,7 +274,7 @@ func TestProductServiceReviewFlow(t *testing.T) {
 		t.Fatalf("apply reject to product failed: %v", err)
 	}
 	// 并发重复审核：同一轮记录不能再改状态。
-	if err := rr.DecideForUpdate(nil, rv.ID, 100, constants.ProductReviewApproved, "", &now); err == nil {
+	if err := rr.DecideForUpdate(nil, rv.ID, uintPtr(100), constants.ProductReviewApproved, "", &now); err == nil {
 		t.Fatal("expected ErrReviewAlreadyDecided on concurrent duplicate review")
 	}
 
@@ -293,7 +296,7 @@ func TestProductServiceReviewFlow(t *testing.T) {
 	}
 
 	// 通过后商品恢复在售（模拟审核 service 同步）。
-	if err := rr.DecideForUpdate(nil, rv2.ID, 99, constants.ProductReviewApproved, "", &now); err != nil {
+	if err := rr.DecideForUpdate(nil, rv2.ID, uintPtr(99), constants.ProductReviewApproved, "", &now); err != nil {
 		t.Fatalf("approve failed: %v", err)
 	}
 	if err := pr.UpdateReviewForUpdate(nil, product.ID, map[string]interface{}{
@@ -306,7 +309,7 @@ func TestProductServiceReviewFlow(t *testing.T) {
 	}
 
 	// 同一轮记录再次给出结果必须失败（并发审核只有一个结果）。
-	if err := rr.DecideForUpdate(nil, rv2.ID, 100, constants.ProductReviewRejected, "again", &now); err == nil {
+	if err := rr.DecideForUpdate(nil, rv2.ID, uintPtr(100), constants.ProductReviewRejected, "again", &now); err == nil {
 		t.Fatal("expected duplicate decide blocked after approval")
 	}
 }

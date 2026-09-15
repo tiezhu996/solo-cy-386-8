@@ -99,35 +99,58 @@ func TestUserRepository(t *testing.T) {
 
 func TestProductReviewDecideAtomic(t *testing.T) {
 	db := newTestDB(t)
+	// 打开 SQLite 外键约束，复现生产 PostgreSQL 环境：待审记录 reviewer_id 为 NULL 合法，
+	// 写不存在的用户 id（如 0）必须失败，避免再次出现“伪造审核人导致整体回滚”。
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("get sql db: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
+	if err := db.Exec("PRAGMA foreign_keys = ON").Error; err != nil {
+		t.Fatalf("enable fk: %v", err)
+	}
 	pRepo := NewProductRepository(db)
 	rRepo := NewProductReviewRepository(db)
+	uRepo := NewUserRepository(db)
 
-	p := &model.Product{SellerID: 1, Title: "相机", Description: "二手相机", OriginalPrice: 3000, Price: 1800, Condition: "almost_new", Category: "digital", Status: "off_shelf", ReviewStatus: "pending_review", ReviewRound: 1}
+	seller := &model.User{Username: "seller_fk", PasswordHash: "h", Nickname: "卖家", Role: "user"}
+	reviewer1 := &model.User{Username: "rev1_fk", PasswordHash: "h", Nickname: "审核员1", Role: "admin"}
+	reviewer2 := &model.User{Username: "rev2_fk", PasswordHash: "h", Nickname: "审核员2", Role: "admin"}
+	for _, u := range []*model.User{seller, reviewer1, reviewer2} {
+		if err := uRepo.Create(u); err != nil {
+			t.Fatalf("create user: %v", err)
+		}
+	}
+
+	p := &model.Product{SellerID: seller.ID, Title: "相机", Description: "二手相机", OriginalPrice: 3000, Price: 1800, Condition: "almost_new", Category: "digital", Status: "off_shelf", ReviewStatus: "pending_review", ReviewRound: 1}
 	if err := pRepo.Create(p); err != nil {
 		t.Fatalf("create product: %v", err)
 	}
-	rv := &model.ProductReview{ProductID: p.ID, SellerID: 1, Round: 1, Status: "pending_review"}
+	rv := &model.ProductReview{ProductID: p.ID, SellerID: seller.ID, Round: 1, Status: "pending_review"}
 	if err := rRepo.CreateTx(nil, rv); err != nil {
-		t.Fatalf("create review: %v", err)
+		t.Fatalf("create pending review (reviewer_id must stay NULL): %v", err)
+	}
+	if rv.ReviewerID != nil {
+		t.Fatalf("pending review must have NULL reviewer_id, got %d", *rv.ReviewerID)
 	}
 
 	// 模拟两个管理员并发审核：条件更新只允许一个事务把 pending_review 改成最终结果。
-	if err := rRepo.DecideForUpdate(nil, rv.ID, 99, "approved", "", nil); err != nil {
+	if err := rRepo.DecideForUpdate(nil, rv.ID, &reviewer1.ID, "approved", "", nil); err != nil {
 		t.Fatalf("first decide: %v", err)
 	}
-	if err := rRepo.DecideForUpdate(nil, rv.ID, 100, "rejected", "重复审核", nil); err != ErrReviewAlreadyDecided {
+	if err := rRepo.DecideForUpdate(nil, rv.ID, &reviewer2.ID, "rejected", "重复审核", nil); err != ErrReviewAlreadyDecided {
 		t.Fatalf("expected ErrReviewAlreadyDecided, got %v", err)
 	}
 	got, err := rRepo.GetByID(rv.ID)
 	if err != nil {
 		t.Fatalf("get review: %v", err)
 	}
-	if got.Status != "approved" || got.ReviewerID != 99 || got.Reason != "" {
-		t.Fatalf("loser must not overwrite winner, got status=%s reviewer=%d reason=%q", got.Status, got.ReviewerID, got.Reason)
+	if got.Status != "approved" || got.ReviewerID == nil || *got.ReviewerID != reviewer1.ID || got.Reason != "" {
+		t.Fatalf("loser must not overwrite winner, got status=%s reviewer=%v reason=%q", got.Status, got.ReviewerID, got.Reason)
 	}
 
 	// 驳回后新一轮送审与历史回读。
-	rv2 := &model.ProductReview{ProductID: p.ID, SellerID: 1, Round: 2, Status: "pending_review"}
+	rv2 := &model.ProductReview{ProductID: p.ID, SellerID: seller.ID, Round: 2, Status: "pending_review"}
 	if err := rRepo.CreateTx(nil, rv2); err != nil {
 		t.Fatalf("create round 2 review: %v", err)
 	}

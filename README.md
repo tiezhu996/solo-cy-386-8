@@ -303,7 +303,7 @@ curl -sS -X POST http://localhost:19406/api/v1/orders/$ORDER_ID/pay -H "Authoriz
 - `backend/internal/constants/messages.go`（MsgProductCreated/Updated/Submitted、MsgReviewApproved/Rejected/Resubmit）
 - `backend/internal/constants/log_templates.go`（LogProductReviewSubmit/Approve/Reject/Duplicate/Listed/History，LogProductCreated/Updated 增加 review_status/round 字段）
 - `backend/internal/model/product.go`（ReviewStatus/ReviewRound/RejectReason 字段）
-- `backend/internal/model/product_review.go`（ProductReview 审核记录实体，唯一索引 (product_id, round)）
+- `backend/internal/model/product_review.go`（ProductReview 审核记录实体，唯一索引 (product_id, round)，ReviewerID 为 *uint 可空外键：待审记录没有审核人，裁决后才写入管理员 ID）
 - `backend/internal/dto/product_dto.go`（ProductVO 审核字段）、`backend/internal/dto/product_review_dto.go`（Decision/Query/VO，oneof 校验）
 - `backend/internal/repository/product_review_repository.go`（条件更新 DecideForUpdate，SQL 层保证并发唯一结果）、`product_repository.go`（review_status 过滤/UpdateReviewForUpdate/RestoreOnSaleIfApprovedForUpdate）
 - `backend/internal/service/product_service.go`（发布/修改送审状态机、大厅仅 approved、详情可见性、收藏校验）

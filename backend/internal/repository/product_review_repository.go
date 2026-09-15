@@ -21,7 +21,7 @@ type ProductReviewRepository interface {
 	MaxRound(tx *gorm.DB, productID uint) (int, error)
 	// DecideForUpdate 条件更新：仅当记录仍为 pending_review 时写入结果。
 	// 并发审核只有一个事务 RowsAffected=1，从 SQL 层保证“同一商品并发审核只产生一个结果”。
-	DecideForUpdate(tx *gorm.DB, id, reviewerID uint, status, reason string, reviewedAt interface{}) error
+	DecideForUpdate(tx *gorm.DB, id uint, reviewerID *uint, status, reason string, reviewedAt interface{}) error
 	List(query map[string]interface{}, page, pageSize int) ([]model.ProductReview, int64, error)
 	ListByProduct(productID uint) ([]model.ProductReview, error)
 }
@@ -110,7 +110,7 @@ func (r *productReviewRepo) MaxRound(tx *gorm.DB, productID uint) (int, error) {
 	return *maxRound, nil
 }
 
-func (r *productReviewRepo) DecideForUpdate(tx *gorm.DB, id, reviewerID uint, status, reason string, reviewedAt interface{}) error {
+func (r *productReviewRepo) DecideForUpdate(tx *gorm.DB, id uint, reviewerID *uint, status, reason string, reviewedAt interface{}) error {
 	if tx == nil {
 		tx = r.db
 	}
@@ -119,7 +119,7 @@ func (r *productReviewRepo) DecideForUpdate(tx *gorm.DB, id, reviewerID uint, st
 		Updates(map[string]interface{}{
 			"status":      status,
 			"reason":      reason,
-			"reviewer_id": reviewerID,
+			"reviewer_id": reviewerID, // *uint：裁决写真实管理员 ID，不裁决的路径根本不会调用本方法
 			"reviewed_at": reviewedAt,
 		})
 	if res.Error != nil {

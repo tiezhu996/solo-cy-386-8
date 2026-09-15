@@ -23,7 +23,7 @@ type ProductReviewVO struct {
 	Round      int        `json:"round"`
 	Status     string     `json:"status"`
 	Reason     string     `json:"reason"`
-	ReviewerID uint       `json:"reviewer_id"`
+	ReviewerID *uint      `json:"reviewer_id"` // 待审核记录为 null，裁决后为管理员 ID
 	Reviewer   *UserVO    `json:"reviewer,omitempty"`
 	Product    *ProductVO `json:"product,omitempty"`
 	CreatedAt  string     `json:"created_at"`

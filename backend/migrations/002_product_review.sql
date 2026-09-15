@@ -8,6 +8,7 @@ ALTER TABLE products ALTER COLUMN review_status SET DEFAULT 'pending_review';
 CREATE INDEX IF NOT EXISTS idx_products_review_status ON products (review_status);
 
 -- 2) product_reviews 审核记录表：每个商品每一轮送审仅一条记录。
+-- reviewer_id 可空并带外键：待审核时没有审核人，必须为 NULL，裁决后才写入管理员 ID（不得写 0 伪造账号）。
 CREATE TABLE IF NOT EXISTS product_reviews (
     id BIGSERIAL PRIMARY KEY,
     product_id BIGINT NOT NULL,
@@ -15,12 +16,17 @@ CREATE TABLE IF NOT EXISTS product_reviews (
     round INTEGER NOT NULL DEFAULT 1,
     status VARCHAR(32) NOT NULL DEFAULT 'pending_review',
     reason TEXT,
-    reviewer_id BIGINT,
+    reviewer_id BIGINT REFERENCES users(id),
     reviewed_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT fk_product_reviews_product FOREIGN KEY (product_id) REFERENCES products(id),
     CONSTRAINT uk_product_review_round UNIQUE (product_id, round)
 );
 CREATE INDEX IF NOT EXISTS idx_product_reviews_status ON product_reviews (status);
 CREATE INDEX IF NOT EXISTS idx_product_reviews_product ON product_reviews (product_id);
 CREATE INDEX IF NOT EXISTS idx_product_reviews_seller ON product_reviews (seller_id);
+CREATE INDEX IF NOT EXISTS idx_product_reviews_reviewer ON product_reviews (reviewer_id);
+
+-- 兼容旧版本 AutoMigrate 已建出的 NOT NULL reviewer_id 列：放开为可空（重复执行无副作用）。
+ALTER TABLE product_reviews ALTER COLUMN reviewer_id DROP NOT NULL;

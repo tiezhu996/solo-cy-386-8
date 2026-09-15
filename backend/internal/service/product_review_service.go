@@ -65,7 +65,7 @@ func (s *ProductReviewService) Decide(reviewerID uint, reviewID uint, req dto.Pr
 		}
 		now := time.Now()
 		// 条件更新：即使绕过内存判断，数据库层也保证只有一个并发事务能写结果。
-		if err := s.reviewRepo.DecideForUpdate(tx, reviewID, reviewerID, targetStatus, reason, &now); err != nil {
+		if err := s.reviewRepo.DecideForUpdate(tx, reviewID, &reviewerID, targetStatus, reason, &now); err != nil {
 			if errors.Is(err, repository.ErrReviewAlreadyDecided) {
 				return util.NewAppError(constants.CodeReviewStateInvalid,
 					"商品审核失败：审核记录 id="+fmt.Sprint(reviewID)+" 已被其他管理员处理，重复审核无效", err)
@@ -74,7 +74,7 @@ func (s *ProductReviewService) Decide(reviewerID uint, reviewID uint, req dto.Pr
 		}
 		rv.Status = targetStatus
 		rv.Reason = reason
-		rv.ReviewerID = reviewerID
+		rv.ReviewerID = &reviewerID
 		rv.ReviewedAt = &now
 		updates := map[string]interface{}{
 			"review_status": targetStatus,

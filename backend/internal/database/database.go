@@ -55,6 +55,11 @@ func Connect(cfg *config.Config, log *slog.Logger) (*gorm.DB, error) {
 	}
 	log.Info("database migrated", "models", len(models))
 
+	// 审核表结构修正：reviewer_id 必须可空（待审记录没有审核人）。幂等，重复执行无副作用。
+	if err := ensureProductReviewSchema(db); err != nil {
+		return nil, fmt.Errorf("ensure product review schema: %w", err)
+	}
+
 	if !reviewColumnExisted {
 		if err := backfillLegacyProducts(db); err != nil {
 			return nil, fmt.Errorf("backfill legacy product review status: %w", err)

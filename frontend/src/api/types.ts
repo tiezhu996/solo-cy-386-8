@@ -53,7 +53,7 @@ export interface ProductReviewVO {
   round: number
   status: string
   reason: string
-  reviewer_id: number
+  reviewer_id?: number | null
   reviewer?: UserVO
   product?: ProductVO
   created_at: string
